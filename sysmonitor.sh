@@ -107,18 +107,3 @@ getent passwd | while IFS=: read -r username _ uid _ _ _ home shell; do
     echo
   fi
 done
-
-# Notes:
-# - This script is only executable by root or trusted admins to prevent unauthorized access:
-#     chmod 700 /path/to/this_script.sh
-#     chown root:root /path/to/this_script.sh
-#
-# - Run this script locally or over a secure SSH connection to protect sensitive data.
-#
-# - Consider redirecting script output to a secure log file with restricted permissions:
-#     /path/to/this_script.sh >> /var/log/sysmonitor.log 2>&1
-#     chmod 600 /var/log/sysmonitor.log
-#
-# - Make sure the alert log file used in the script (e.g., /var/log/sysmonitor_alerts.log) is also secured:
-#     touch /var/log/sysmonitor_alerts.log
-#     chmod 600 /var/log/sysmonitor_alerts.log
