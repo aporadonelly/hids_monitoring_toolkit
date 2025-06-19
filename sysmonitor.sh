@@ -45,6 +45,7 @@ send_alert() {
     echo "$timestamp INFO: mail sent successfully" >> "$MAIL_LOG"
   fi
 }
+echo
 
 echo "==========User Login & Activity Audit=========="
 
@@ -65,20 +66,29 @@ fi
 echo
 
 # Count failed login attempts in the last 1 hour
-fail_log=$(journalctl -u ssh --since "1 hour ago" | grep "Failed password")
-fail_count=$(echo "$fail_log" | wc -l)
+fail_log=$(journalctl -u ssh --since "$ALERT_LOOKBACK" | grep "Failed password")
+# fail_count=$(echo "$fail_log" | wc -l)
+fail_log=$(journalctl -u ssh --since "$ALERT_LOOKBACK")
+fail_count=$(grep -c "Failed password" <<< "$fail_log")
+fail_log=$(grep "Failed password" <<< "$fail_log")
+
+# echo "DEBUG: fail_log content:"
+# echo "$fail_log"
+
 
 if [ "$fail_count" -gt 0 ]; then
-  echo "ALERT: $fail_count failed SSH login attempts in the last hour."
+  # echo "ALERT: $fail_count failed SSH login attempts in the "$ALERT_LOOKBACK"."
+  echo "=====INFO: Preparing alert for $fail_count failed login attempts in the last "$ALERT_LOOKBACK".====="
 
   # Extract and summarize IPs
   ip_summary=$(echo "$fail_log" | awk '{for (i=1; i<=NF; i++) if ($i == "from") print $(i+1)}' | sort | uniq -c)
 
   # Get recent attempt timestamps and IPs
-  recent_attempts=$(echo "$fail_log" | tail -n 5 | awk '{print $1, $2, $3, $11}')
+  recent_attempts=$(echo "$fail_log" | tail -n 5 | grep -oP 'from \K[\d\.]+')
 
+  echo
   # Build detailed alert message
-  alert_msg="Detected $fail_count failed SSH login attempts in the past hour.
+  alert_msg="Detected $fail_count failed SSH login attempts in the last "$ALERT_LOOKBACK".
 
 Source IPs:
 $ip_summary
@@ -89,8 +99,10 @@ $recent_attempts
 
   # Send and log the alert
   send_alert "$alert_msg"
+
+#if fail_count is 0
 else
-  echo "INFO: Failed SSH login attempts in the last hour: $fail_count"
+  echo "INFO: Failed SSH login attempts in the last "$ALERT_LOOKBACK": $fail_count"
 fi
 
 echo
@@ -98,12 +110,30 @@ echo
 COMMAND_COUNT=3
 echo "INFO: Recent shell commands from users (up to $COMMAND_COUNT each, filtered for sensitive info):"
 
-# Get users with UID >= 1000 and valid shell
 getent passwd | while IFS=: read -r username _ uid _ _ _ home shell; do
-  if [ "$uid" -ge 1000 ] && [[ "$shell" =~ /(ba)?sh$|zsh$ ]] && [[ "$shell" != "/usr/sbin/nologin" ]]; then
+  if [ "$uid" -ge 1000 ] && [[ "$shell" =~ /(ba)?sh$|zsh$ ]]; then
     echo "-- $username --"
-    user_home=$(eval echo "~$username")
-    sudo -u "$username" bash -c "tail -n $COMMAND_COUNT \"$user_home/.bash_history\" 2>/dev/null | grep -v -E 'password|secret|key|token' || echo 'No safe history available.'"
+    hist="$home/.bash_history"
+    [ ! -f "$hist" ] && hist="$home/.zsh_history"
+    if [ -f "$hist" ]; then
+      sudo -u "$username" tail -n $COMMAND_COUNT "$hist" 2>/dev/null | grep -v -E 'password|secret|key|token' || echo "No safe history available."
+    else
+      echo "No safe history available."
+    fi
     echo
   fi
 done
+
+
+# COMMAND_COUNT=3
+# echo "INFO: Recent shell commands from users (up to $COMMAND_COUNT each, filtered for sensitive info):"
+
+# # Get users with UID >= 1000 and valid shell
+# getent passwd | while IFS=: read -r username _ uid _ _ _ home shell; do
+#   if [ "$uid" -ge 1000 ] && [[ "$shell" =~ /(ba)?sh$|zsh$ ]] && [[ "$shell" != "/usr/sbin/nologin" ]]; then
+#     echo "-- $username --"
+#     user_home=$(eval echo "~$username")
+#     sudo -u "$username" bash -c "tail -n $COMMAND_COUNT \"$user_home/.bash_history\" 2>/dev/null | grep -v -E 'password|secret|key|token' || echo 'No safe history available.'"
+#     echo
+#   fi
+# done
