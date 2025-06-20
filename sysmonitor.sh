@@ -84,7 +84,8 @@ if [ "$fail_count" -gt 0 ]; then
   ip_summary=$(echo "$fail_log" | awk '{for (i=1; i<=NF; i++) if ($i == "from") print $(i+1)}' | sort | uniq -c)
 
   # Get recent attempt timestamps and IPs
-  recent_attempts=$(echo "$fail_log" | tail -n 5 | grep -oP 'from \K[\d\.]+')
+  # recent_attempts=$(echo "$fail_log" | tail -n 5 | grep -oP 'from \K[\d\.]+')
+  recent_attempts=$(echo "$fail_log" | tail -n 5 | grep -oP 'from \K[\d\.:a-fA-F]+')
 
   echo
   # Build detailed alert message
