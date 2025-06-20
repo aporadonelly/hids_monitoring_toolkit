@@ -123,17 +123,3 @@ getent passwd | while IFS=: read -r username _ uid _ _ _ home shell; do
     echo
   fi
 done
-
-
-# COMMAND_COUNT=3
-# echo "INFO: Recent shell commands from users (up to $COMMAND_COUNT each, filtered for sensitive info):"
-
-# # Get users with UID >= 1000 and valid shell
-# getent passwd | while IFS=: read -r username _ uid _ _ _ home shell; do
-#   if [ "$uid" -ge 1000 ] && [[ "$shell" =~ /(ba)?sh$|zsh$ ]] && [[ "$shell" != "/usr/sbin/nologin" ]]; then
-#     echo "-- $username --"
-#     user_home=$(eval echo "~$username")
-#     sudo -u "$username" bash -c "tail -n $COMMAND_COUNT \"$user_home/.bash_history\" 2>/dev/null | grep -v -E 'password|secret|key|token' || echo 'No safe history available.'"
-#     echo
-#   fi
-# done
