@@ -48,9 +48,9 @@ send_alert() {
 echo
 
 echo "==========User Login & Activity Audit=========="
-
+echo 
 echo "INFO: Currently logged-in users:"
-who
+w
 
 echo
 
@@ -110,16 +110,28 @@ echo
 COMMAND_COUNT=3
 echo "INFO: Recent shell commands from users (up to $COMMAND_COUNT each, filtered for sensitive info):"
 
-getent passwd | while IFS=: read -r username _ uid _ _ _ home shell; do
+getent passwd | while IFS=: read -r username _ uid _ _ home shell; do
   if [ "$uid" -ge 1000 ] && [[ "$shell" =~ /(ba)?sh$|zsh$ ]]; then
     echo "-- $username --"
-    hist="$home/.bash_history"
-    [ ! -f "$hist" ] && hist="$home/.zsh_history"
-    if [ -f "$hist" ]; then
-      sudo -u "$username" tail -n $COMMAND_COUNT "$hist" 2>/dev/null | grep -v -E 'password|secret|key|token' || echo "No safe history available."
+
+    hist=""
+    if [ -f "$home/.bash_history" ]; then
+      hist="$home/.bash_history"
+    elif [ -f "$home/.zsh_history" ]; then
+      hist="$home/.zsh_history"
+    fi
+
+    if [ -n "$hist" ]; then
+      output=$(sudo -u "$username" tail -n "$COMMAND_COUNT" "$hist" 2>/dev/null | grep -viE 'password|secret|key|token')
+      if [ -n "$output" ]; then
+        echo "$output"
+      else
+        echo "No safe commands found in history."
+      fi
     else
-      echo "No safe history available."
+      echo "No history file found."
     fi
     echo
   fi
 done
+
