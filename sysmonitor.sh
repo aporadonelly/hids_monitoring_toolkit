@@ -4,10 +4,10 @@
 # we wil clear the alerts file at the start of your script 
 > /tmp/combined_sys_alerts.txt 
 
-LOGFILE="/home/Testmonitor_alerts.log"
+LOGFILE="$HOME/Testmonitor_alerts.log"
 MAIL_LOG="/var/log/sysmonitor/mail_errors.log"
 USER_LOG_FILE="/var/log/auth.log"
-TRACEFILE="/home/monitor_trace.json"
+TRACEFILE="$HOME/monitor_trace.json"
 
 EMAIL_RECIPIENT="nelly.aporado@exocoder.io"
 EMAIL_SUBJECT="System Monitoring Alert"
@@ -173,7 +173,7 @@ w
 echo
 
 # Show last real login (excluding system boot entries)
-last_login=$(last -F | grep -v "system boot" | head -n 1)
+last_login=$(last -F | grep -v "system boot" | head -n 5)
 if [ -n "$last_login" ]; then
   echo "INFO: Last login recorded:"
   echo "$last_login"
