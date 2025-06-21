@@ -9,7 +9,7 @@ MAIL_LOG="/var/log/sysmonitor/mail_errors.log"
 USER_LOG_FILE="/var/log/auth.log"
 TRACEFILE="$HOME/monitor_trace.json"
 
-EMAIL_RECIPIENT="nelly.aporado@exocoder.io"
+EMAIL_RECIPIENT="replacethisemail@gmail.com"
 EMAIL_SUBJECT="System Monitoring Alert"
 
 # Check writable log directory
