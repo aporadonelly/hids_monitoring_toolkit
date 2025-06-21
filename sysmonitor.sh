@@ -1,28 +1,31 @@
 #!/bin/bash
 
-# Load alert config
-CONFIG_FILE="/etc/sysmonitor.conf"
+#To be safer and avoid sending old alerts, 
+# we wil clear the alerts file at the start of your script 
+> /tmp/combined_sys_alerts.txt 
 
-if [ -f "$CONFIG_FILE" ]; then
-  source "$CONFIG_FILE"
-else
-  echo "ERROR: Config file $CONFIG_FILE not found. Please create it and define ALERT_EMAIL." >&2
-  exit 1
+LOGFILE="/var/log/sysmonitor.log"
+EMAIL_RECIPIENT="nelly.aporado@exocoder.io"
+EMAIL_SUBJECT="System Monitoring Alert"
+MAIL_LOG="sysmonitor_mail_errors.log"
+TRACEFILE="monitor_trace.json"
+USER_LOG_FILE="/var/log/auth.log"
+
+# Check writable log directory
+if [ ! -w "$(dirname "$LOGFILE")" ]; then
+    echo "Error: Cannot write to log directory $(dirname "$LOGFILE")" | tee -a "$LOGFILE"
+    exit 1
 fi
 
-# Validate email
-if [ -z "$ALERT_EMAIL" ]; then
-  echo "ERROR: ALERT_EMAIL is not set in $CONFIG_FILE" >&2
-  exit 1
+# Check writable trace directory
+if [ ! -w "$(dirname "$TRACEFILE")" ]; then
+    echo "Error: Cannot write to trace directory $(dirname "$TRACEFILE")" | tee -a "$TRACEFILE"
+    exit 1
 fi
-
-# Alert config
-ALERT_LOG="/var/log/sysmonitor_alerts.log"
-MAIL_LOG="/var/log/sysmonitor_mail_errors.log"
 
 # Check if `mail` is installed
 if ! command -v mail >/dev/null 2>&1; then
-  echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: 'mail' command not found. Please install mailutils or similar." >> "$ALERT_LOG"
+  echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: 'mail' command not found. Please install mailutils or similar." >> "$LOGFILE"
   exit 1
 fi
 
@@ -33,10 +36,10 @@ send_alert() {
   local alert_msg="$timestamp ALERT:\n$message"
 
   # Log alert to file
-  echo -e "$alert_msg" | tee -a "$ALERT_LOG"
+  echo -e "$alert_msg" | tee -a "$LOGFILE"
 
   # Send mail and capture output & errors
-  echo -e "$alert_msg" | /usr/bin/mail -s "Sysmonitor Alert" "$ALERT_EMAIL" 2>> "$MAIL_LOG"
+  echo -e "$alert_msg" | /usr/bin/mail -s "Sysmonitor Alert" "$EMAIL_RECIPIENT" 2>> "$MAIL_LOG"
 
   local mail_status=$?
   if [ $mail_status -ne 0 ]; then
@@ -45,13 +48,127 @@ send_alert() {
     echo "$timestamp INFO: mail sent successfully" >> "$MAIL_LOG"
   fi
 }
+
+# Check for required commands
+for cmd in awk bc df free ps ss who last; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "Error: Required command '$cmd' not found" | tee -a "$LOGFILE"
+        exit 1
+    fi
+done
+
+
+TEMP_TRACE=$(mktemp)
+if [ ! -f "$TRACEFILE" ]; then
+    echo '{"traceEvents": []}' > "$TRACEFILE"
+fi
+
+# Read existing trace events
+jq '.' "$TRACEFILE" > "$TEMP_TRACE" || {
+    echo "Error: Invalid JSON in $TRACEFILE" | tee -a "$LOGFILE"
+    exit 1
+}
+
+# Timestamp in microseconds
+EPOCH_MICRO=$(($(date +%s%N)/1000))
+
+# CPU Usage
+cpu_idle=$(awk '{u=$2+$4; t=$2+$4+$5; if (NR==1) {print (t-u)/t*100}}' /proc/stat)
+cpu_usage=$(echo "100 - $cpu_idle" | bc | awk '{printf "%.1f", $0}')
+
+echo "==== System Monitoring Report ====" | tee -a "$LOGFILE"
+echo "Date: $(date)" | tee -a "$LOGFILE"
+echo | tee -a "$LOGFILE"
+
+echo "CPU Usage: $cpu_usage%" | tee -a "$LOGFILE"
+if [ $(echo "$cpu_usage > 80" | bc) -eq 1 ]; then
+    alert="WARNING: High CPU usage detected: $cpu_usage%"
+    echo "$alert" | tee -a "$LOGFILE"
+    # send_alert "$alert"
+    # Instead of sending email here, we will append to a global alert file or variable so all alerts will be sent in one go
+    echo "$alert" >> /tmp/combined_sys_alerts.txt
+fi
+echo | tee -a "$LOGFILE"
+
+# Memory Usage
+mem_total=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+mem_available=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+mem_used=$((mem_total - mem_available))
+mem_usage_percent=$((mem_used * 100 / mem_total))
+echo "Memory Usage: $((mem_used / 1024)) MB / $((mem_total / 1024)) MB ($mem_usage_percent%)" | tee -a "$LOGFILE"
+if [ "$mem_usage_percent" -gt 80 ]; then
+    alert="WARNING: High memory usage detected: $mem_usage_percent%"
+    echo "$alert" | tee -a "$LOGFILE"
+    # send_alert "$alert"
+    echo "$alert" >> /tmp/combined_sys_alerts.txt
+fi
+echo | tee -a "$LOGFILE"
+
+# Prepare new trace events
+NEW_EVENTS=$(cat <<EOF
+[
+  {
+    "name": "CPU Usage",
+    "cat": "system",
+    "ph": "X",
+    "ts": $EPOCH_MICRO,
+    "dur": 1000000,
+    "pid": 1,
+    "tid": 1,
+    "args": {"usage_percent": "$cpu_usage"}
+  },
+  {
+    "name": "Memory Usage",
+    "cat": "system",
+    "ph": "X",
+    "ts": $EPOCH_MICRO,
+    "dur": 1000000,
+    "pid": 1,
+    "tid": 2,
+    "args": {"usage_percent": "$mem_usage_percent"}
+  }
+]
+EOF
+)
+
+# Append new events to trace file atomically using jq
+jq --argjson new_events "$NEW_EVENTS" '.traceEvents += $new_events' "$TEMP_TRACE" > "$TEMP_TRACE.new" && mv "$TEMP_TRACE.new" "$TRACEFILE"
+rm -f "$TEMP_TRACE"
+
+echo | tee -a "$LOGFILE"
+
+
+# Disk Usage
+disk_usage=$(df -P / | awk 'NR==2 {print $5}' | tr -d '%')
+echo "Disk Usage on /: $disk_usage%" | tee -a "$LOGFILE"
+if [ "$disk_usage" -gt 80 ]; then
+    alert="WARNING: Disk usage above 80%: $disk_usage%"
+    echo "$alert" | tee -a "$LOGFILE"
+    # send_alert "$alert"
+    echo "$alert" >> /tmp/combined_sys_alerts.txt
+fi
+echo | tee -a "$LOGFILE"
+
+# Uptime
+echo "System Uptime:" | tee -a "$LOGFILE"
+uptime -p | tee -a "$LOGFILE"
+echo | tee -a "$LOGFILE"
+
+
+# Active network connections (top 10, established)
+echo "Active network connections (top 10, established):" | tee -a "$LOGFILE"
+ss -tuna state established | head -n 10 | tee -a "$LOGFILE"
+echo | tee -a "$LOGFILE"
+
+
+#Top 5 CPU-intensive processes
+echo "INFO: Top 5 memory-intensive processes:"
+ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%mem | head -n 6
 echo
 
-echo "==========User Login & Activity Audit=========="
-echo 
+# User Login & Activity Audit
 echo "INFO: Currently logged-in users:"
 w
-
 echo
 
 # Show last real login (excluding system boot entries)
@@ -62,77 +179,55 @@ if [ -n "$last_login" ]; then
 else
   echo "INFO: No previous login records found."
 fi
-
 echo
 
-# Count failed login attempts in the last 1 hour
-fail_log=$(journalctl -u ssh --since "$ALERT_LOOKBACK" | grep "Failed password")
-# fail_count=$(echo "$fail_log" | wc -l)
-fail_log=$(journalctl -u ssh --since "$ALERT_LOOKBACK")
-fail_count=$(grep -c "Failed password" <<< "$fail_log")
-fail_log=$(grep "Failed password" <<< "$fail_log")
+# Set fallback if variable isn't provided
+ALERT_LOOKBACK="${ALERT_LOOKBACK:-10 days ago}"
 
-# echo "DEBUG: fail_log content:"
-# echo "$fail_log"
+# Get timestamp in ISO 8601 (matching log format)
+cutoff_timestamp=$(date --date="$ALERT_LOOKBACK" --iso-8601=seconds)
 
+# Read auth log and filter failed ssh logins after cutoff time
+fail_log=$(sudo awk -v cutoff="$cutoff_timestamp" '
+  {
+    split($1, log_date, "T")
+    if (length(log_date) && $0 ~ /sshd.*Failed password/) {
+      log_time = $1
+      if (log_time >= cutoff) print
+    }
+  }
+' /var/log/auth.log)
 
+fail_count=$(echo "$fail_log" | wc -l)
 if [ "$fail_count" -gt 0 ]; then
-  # echo "ALERT: $fail_count failed SSH login attempts in the "$ALERT_LOOKBACK"."
-  echo "=====INFO: Preparing alert for $fail_count failed login attempts in the last "$ALERT_LOOKBACK".====="
+  ip_summary=$(echo "$fail_log" |
+                 awk '{for(i=1;i<=NF;i++) if($i=="from") print $(i+1)}' |
+                 sort | uniq -c | sort -nr)
 
-  # Extract and summarize IPs
-  ip_summary=$(echo "$fail_log" | awk '{for (i=1; i<=NF; i++) if ($i == "from") print $(i+1)}' | sort | uniq -c)
+  readable_ips="${ip_summary:-None detected.}"
 
-  # Get recent attempt timestamps and IPs
-  # recent_attempts=$(echo "$fail_log" | tail -n 5 | grep -oP 'from \K[\d\.]+')
-  recent_attempts=$(echo "$fail_log" | tail -n 5 | grep -oP 'from \K[\d\.:a-fA-F]+')
-
-  echo
-  # Build detailed alert message
-  alert_msg="Detected $fail_count failed SSH login attempts in the last "$ALERT_LOOKBACK".
+  alert_msg=$(printf "
+Failed SSH login attempts Detected:
 
 Source IPs:
-$ip_summary
+%s
+" "$readable_ips")
 
-Recent attempts:
-$recent_attempts
-"
-
-  # Send and log the alert
-  send_alert "$alert_msg"
-
-#if fail_count is 0
+  # Append to combined alerts file instead of sending immediately
+  echo "$alert_msg" >> /tmp/combined_sys_alerts.txt
 else
-  echo "INFO: Failed SSH login attempts in the last "$ALERT_LOOKBACK": $fail_count"
+  echo "✅ INFO: No failed SSH login attempts since $ALERT_LOOKBACK."
 fi
 
-echo
+# Append alerts to a file and send one email
+if [ -s /tmp/combined_sys_alerts.txt ]; then
+    alert_body=$(cat /tmp/combined_sys_alerts.txt)
+    send_alert "$alert_body"
+    # Clear the temporary file
+    > /tmp/combined_sys_alerts.txt
+else
+    echo "✅ INFO: No alerts to send."
+fi
 
-COMMAND_COUNT=3
-echo "INFO: Recent shell commands from users (up to $COMMAND_COUNT each, filtered for sensitive info):"
 
-getent passwd | while IFS=: read -r username _ uid _ _ home shell; do
-  if [ "$uid" -ge 1000 ] && [[ "$shell" =~ /(ba)?sh$|zsh$ ]]; then
-    echo "-- $username --"
-
-    hist=""
-    if [ -f "$home/.bash_history" ]; then
-      hist="$home/.bash_history"
-    elif [ -f "$home/.zsh_history" ]; then
-      hist="$home/.zsh_history"
-    fi
-
-    if [ -n "$hist" ]; then
-      output=$(sudo -u "$username" tail -n "$COMMAND_COUNT" "$hist" 2>/dev/null | grep -viE 'password|secret|key|token')
-      if [ -n "$output" ]; then
-        echo "$output"
-      else
-        echo "No safe commands found in history."
-      fi
-    else
-      echo "No history file found."
-    fi
-    echo
-  fi
-done
-
+echo -e "\n==== End of Report ====" | tee -a "$LOGFILE"
