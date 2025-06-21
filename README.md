@@ -1,73 +1,135 @@
-# Sysmonitor - User Login & Activity Audit Script
+# Linux System Monitoring Toolkit
 
-This Bash script monitors user logins, SSH login failures, and recent shell activity. It sends email alerts for failed login attempts and logs relevant information for audit and security purposes.
+## Overview
 
-## Requirements
+This Bash-based toolkit monitors key system metrics on a Linux machine and detects suspicious activity. It collects CPU, memory, disk usage, network connections, user login info, and failed SSH login attempts. Alerts are logged and sent via email for quick response.
 
-- Bash shell
-- `mail` command (from `mailutils` or similar)
-- Root or sudo privileges
+---
 
-## Configuration
+## Setup Instructions
 
-Create a config file at `/etc/sysmonitor.conf` with the following variable:
+### 1. Clone or Copy the Script
 
-```bash
-ALERT_EMAIL="you@example.com"
-````
-
-This email will receive security alerts.
-
-## Permissions & Security
-
-* Only root or trusted administrators should run this script.
-* Set secure permissions:
+Place the monitoring script on your Linux system, for example in your home directory:
 
 ```bash
-chmod 700 /path/to/sysmonitor.sh
-chown root:root /path/to/sysmonitor.sh
+/home/yourusername/sysmonitor.sh
 ```
 
-* Secure output logs:
+Make sure the script is executable:
 
 ```bash
-# Alert logs
-touch /var/log/sysmonitor_alerts.log
-chmod 600 /var/log/sysmonitor_alerts.log
-
-# Optional: script runtime output
-/path/to/sysmonitor.sh >> /var/log/sysmonitor.log 2>&1
-chmod 600 /var/log/sysmonitor.log
+chmod +x /home/yourusername/sysmonitor.sh
 ```
 
-## Usage
+---
 
-Run manually:
+### 2. Create Required Directories and Log Files
+
+The script writes logs and error files in the following paths by default:
 
 ```bash
-sudo /path/to/sysmonitor.sh
+LOGFILE="/home/Testmonitor_alerts.log"
+MAIL_LOG="/var/log/sysmonitor/mail_errors.log"
+USER_LOG_FILE="/var/log/auth.log"
+TRACEFILE="/home/monitor_trace.json"
 ```
 
-Or schedule via cron for hourly/daily monitoring.
+You need to create the directories and files if they don't exist:
 
-## Alert Example
+#### Create `/var/log/sysmonitor` directory and mail error log file:
 
-When failed SSH logins are detected, you’ll receive an email with:
-
-* Count of failed logins in the past hour
-* Source IP summary
-* Recent attempt timestamps and IPs
-
-##  Notes
-
-* This script uses system logs (`journalctl` and `last`) and user history files.
-* Make sure user shell histories (`.bash_history`, `.zsh_history`) are readable by root.
-
-## File Structure
-
+```bash
+sudo mkdir -p /var/log/sysmonitor
+sudo touch /var/log/sysmonitor/mail_errors.log
 ```
-/etc/sysmonitor.conf       # Config file (with ALERT_EMAIL)
-/path/to/sysmonitor.sh     # Script itself
-/var/log/sysmonitor_alerts.log   # Alert log
-/var/log/sysmonitor_mail_errors.log  # Mail error log
+
+#### Set ownership and permissions so your user (replace `yourusername`) can write to them:
+
+```bash
+sudo chown -R yourusername:yourusername /var/log/sysmonitor
+sudo chmod 755 /var/log/sysmonitor
+sudo chmod 644 /var/log/sysmonitor/mail_errors.log
 ```
+
+---
+
+### 3. Permissions for Log Files in Home Directory
+
+Ensure your user owns and has write permission to the home directory log files:
+
+```bash
+touch /home/yourusername/Testmonitor_alerts.log
+touch /home/yourusername/monitor_trace.json
+chown yourusername:yourusername /home/yourusername/Testmonitor_alerts.log /home/yourusername/monitor_trace.json
+chmod 644 /home/yourusername/Testmonitor_alerts.log /home/yourusername/monitor_trace.json
+```
+
+---
+
+### 4. Verify Required Commands Are Installed
+
+Ensure your system has the required commands used in the script:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y mailutils jq bc
+```
+
+---
+
+### 5. Test the Script
+
+Run the script manually to verify it works:
+
+```bash
+/home/yourusername/sysmonitor.sh
+```
+
+If it runs without errors, you can set it up as a cron job for periodic monitoring.
+
+---
+
+## Optional: Set Up Cron Job for Automation
+
+To run the monitoring script every 15 minutes, edit your crontab:
+
+```bash
+crontab -e
+```
+
+Add the line:
+
+```bash
+*/15 * * * * /home/yourusername/sysmonitor.sh
+```
+
+Save and exit. The script will now run every 15 minutes.
+
+---
+
+## Summary of Important Commands for Setup
+
+```bash
+sudo mkdir -p /var/log/sysmonitor
+sudo touch /var/log/sysmonitor/mail_errors.log
+sudo chown -R yourusername:yourusername /var/log/sysmonitor
+sudo chmod 755 /var/log/sysmonitor
+sudo chmod 644 /var/log/sysmonitor/mail_errors.log
+
+touch /home/yourusername/Testmonitor_alerts.log /home/yourusername/monitor_trace.json
+chown yourusername:yourusername /home/yourusername/Testmonitor_alerts.log /home/yourusername/monitor_trace.json
+chmod 644 /home/yourusername/Testmonitor_alerts.log /home/yourusername/monitor_trace.json
+
+sudo apt-get install mailutils jq bc
+chmod +x /home/yourusername/sysmonitor.sh
+```
+
+---
+
+## Notes
+
+* Replace `yourusername` with your actual Linux username.
+* Log files and trace JSON files are kept in your home directory for easier access.
+* Mail errors are logged in `/var/log/sysmonitor/mail_errors.log`.
+* The script sends combined alerts by email and keeps a detailed log.

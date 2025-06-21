@@ -4,12 +4,13 @@
 # we wil clear the alerts file at the start of your script 
 > /tmp/combined_sys_alerts.txt 
 
-LOGFILE="/var/log/sysmonitor.log"
+LOGFILE="/home/Testmonitor_alerts.log"
+MAIL_LOG="/var/log/sysmonitor/mail_errors.log"
+USER_LOG_FILE="/var/log/auth.log"
+TRACEFILE="/home/monitor_trace.json"
+
 EMAIL_RECIPIENT="nelly.aporado@exocoder.io"
 EMAIL_SUBJECT="System Monitoring Alert"
-MAIL_LOG="sysmonitor_mail_errors.log"
-TRACEFILE="monitor_trace.json"
-USER_LOG_FILE="/var/log/auth.log"
 
 # Check writable log directory
 if [ ! -w "$(dirname "$LOGFILE")" ]; then
