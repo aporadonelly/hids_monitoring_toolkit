@@ -9,7 +9,7 @@ MAIL_LOG="/var/log/sysmonitor/mail_errors.log"
 USER_LOG_FILE="/var/log/auth.log"
 TRACEFILE="$HOME/monitor_trace.json"
 
-EMAIL_RECIPIENT="replacethisemail@gmail.com"
+EMAIL_RECIPIENT="nelly.aporado@exocoder.io"
 EMAIL_SUBJECT="System Monitoring Alert"
 
 # Check writable log directory
@@ -181,6 +181,21 @@ else
   echo "INFO: No previous login records found."
 fi
 echo
+
+# Recent commands from user histories
+echo -e "\n-- Recent Commands from Shell History --"
+for home in /home/* /Users/*; do
+  if [ -d "$home" ]; then
+    user=$(basename "$home")
+    for histfile in "$home/.bash_history" "$home/.zsh_history"; do
+      if [ -r "$histfile" ]; then
+        echo "History for $user ($(basename $histfile)):"
+        tail -n 5 "$histfile" | sed 's/^/  /'
+        echo
+      fi
+    done
+  fi
+done
 
 # Set fallback if variable isn't provided
 ALERT_LOOKBACK="${ALERT_LOOKBACK:-10 days ago}"
