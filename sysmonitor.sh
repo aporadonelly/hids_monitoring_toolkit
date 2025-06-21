@@ -198,17 +198,30 @@ for home in /home/* /Users/*; do
 done
 
 # Brute-force attack detection
-echo
-echo "=== Brute-Force Attack Check ==="
 failed_ips=$(grep "Failed password" /var/log/auth.log | \
   awk '{for(i=1;i<=NF;i++){if($i=="from"){print $(i+1)}}}' | \
   sort | uniq -c | sort -nr)
 
 if [ -n "$failed_ips" ]; then
-  echo "Failed SSH login attempts detected:"
-  echo "$failed_ips"
+  alert_msg=$(printf "
+  === Brute-Force Attack Check ===
+    Source IPs:
+    %s
+    " "$failed_ips")
+      echo "$alert_msg" >> /tmp/combined_sys_alerts.txt
 else
   echo "No failed login attempts found."
 fi
+
+# Append alerts to a file and send one email
+if [ -s /tmp/combined_sys_alerts.txt ]; then
+    alert_body=$(cat /tmp/combined_sys_alerts.txt)
+    send_alert "$alert_body"
+    # Clear the temporary file
+    > /tmp/combined_sys_alerts.txt
+else
+    echo "✅ INFO: No alerts to send."
+fi
+
 
 echo -e "\n==== End of Report ====" | tee -a "$LOGFILE"
