@@ -197,53 +197,18 @@ for home in /home/* /Users/*; do
   fi
 done
 
-# Set fallback if variable isn't provided
-ALERT_LOOKBACK="${ALERT_LOOKBACK:-10 days ago}"
+# Brute-force attack detection
+echo
+echo "=== Brute-Force Attack Check ==="
+failed_ips=$(grep "Failed password" /var/log/auth.log | \
+  awk '{for(i=1;i<=NF;i++){if($i=="from"){print $(i+1)}}}' | \
+  sort | uniq -c | sort -nr)
 
-# Get timestamp in ISO 8601 (matching log format)
-cutoff_timestamp=$(date --date="$ALERT_LOOKBACK" --iso-8601=seconds)
-
-# Read auth log and filter failed ssh logins after cutoff time
-fail_log=$(sudo awk -v cutoff="$cutoff_timestamp" '
-  {
-    split($1, log_date, "T")
-    if (length(log_date) && $0 ~ /sshd.*Failed password/) {
-      log_time = $1
-      if (log_time >= cutoff) print
-    }
-  }
-' /var/log/auth.log)
-
-fail_count=$(echo "$fail_log" | wc -l)
-if [ "$fail_count" -gt 0 ]; then
-  ip_summary=$(echo "$fail_log" |
-                 awk '{for(i=1;i<=NF;i++) if($i=="from") print $(i+1)}' |
-                 sort | uniq -c | sort -nr)
-
-  readable_ips="${ip_summary:-None detected.}"
-
-  alert_msg=$(printf "
-Failed SSH login attempts Detected:
-
-Source IPs:
-%s
-" "$readable_ips")
-
-  # Append to combined alerts file instead of sending immediately
-  echo "$alert_msg" >> /tmp/combined_sys_alerts.txt
+if [ -n "$failed_ips" ]; then
+  echo "Failed SSH login attempts detected:"
+  echo "$failed_ips"
 else
-  echo "✅ INFO: No failed SSH login attempts since $ALERT_LOOKBACK."
+  echo "No failed login attempts found."
 fi
-
-# Append alerts to a file and send one email
-if [ -s /tmp/combined_sys_alerts.txt ]; then
-    alert_body=$(cat /tmp/combined_sys_alerts.txt)
-    send_alert "$alert_body"
-    # Clear the temporary file
-    > /tmp/combined_sys_alerts.txt
-else
-    echo "✅ INFO: No alerts to send."
-fi
-
 
 echo -e "\n==== End of Report ====" | tee -a "$LOGFILE"
